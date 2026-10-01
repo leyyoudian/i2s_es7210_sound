@@ -1,0 +1,13 @@
+{
+  "idf.currentSetup": "C:\\esp\\v6.1\\esp-idf",
+  "idf.flashType": "UART",
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "clangd.path": "C:\\Espressif\\tools\\esp-clangd\\esp-21.1.3_20260408\\esp-clangd\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\ley98\\Documents\\idf\\i2s_es7210_sound (4)\\i2s_es7210_sound\\build"
+  ],
+  "idf.port": "COM3",
+  "idf.portWin": "COM23"
+}

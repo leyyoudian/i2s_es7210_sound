@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鸟类声音检测</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+    font-family:'Segoe UI',system-ui,sans-serif;
+    background:#0d1117;
+    color:#e6edf3;
+    min-height:100vh;
+    padding:20px;
+}
+.hdr{text-align:center;padding:16px 0 28px}
+.hdr h1{font-size:22px;font-weight:600;color:#f0f6fc}
+.hdr .sub{font-size:12px;color:#8b949e;margin-top:5px}
+.conn{text-align:center;margin-bottom:20px;font-size:13px}
+.dot{
+    display:inline-block;width:9px;height:9px;
+    border-radius:50%;margin-right:5px;vertical-align:middle;
+    background:#f85149;
+}
+.dot.on{background:#3fb950}
+.grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+    max-width:880px;
+    margin:0 auto;
+}
+.card{
+    background:#161b22;
+    border:1px solid #30363d;
+    border-radius:10px;
+    padding:22px;
+}
+.card-t{
+    font-size:12px;font-weight:500;color:#8b949e;
+    text-transform:uppercase;letter-spacing:.5px;
+    margin-bottom:14px;
+}
+/* Classification */
+.det-st{font-size:30px;font-weight:700;margin-bottom:10px}
+.det-st.bird{color:#3fb950}
+.det-st.noise{color:#8b949e}
+.cr{display:flex;align-items:center;margin-bottom:8px}
+.cr .lb{width:52px;font-size:12px;color:#8b949e}
+.cr .bg{flex:1;height:7px;background:#21262d;border-radius:4px;overflow:hidden;margin:0 8px}
+.cr .bar{height:100%;border-radius:4px;transition:width .3s}
+.cr .bar.b{background:#3fb950}
+.cr .bar.n{background:#6e7681}
+.cr .vl{width:48px;text-align:right;font-size:12px;font-weight:600}
+/* Direction */
+.dir-w{display:flex;flex-direction:column;align-items:center}
+.comp{position:relative;width:240px;height:240px}
+.comp canvas{width:240px;height:240px}
+.ang{font-size:44px;font-weight:700;margin-top:10px;color:#f0f6fc}
+.ang .u{font-size:18px;color:#8b949e}
+/* Info grid */
+.igr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.iit{padding:10px;background:#0d1117;border-radius:8px;text-align:center}
+.iit .iv{font-size:18px;font-weight:700;color:#f0f6fc}
+.iit .il{font-size:10px;color:#8b949e;margin-top:3px}
+/* Timing rows */
+.tr{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #21262d;font-size:13px}
+.tr:last-child{border-bottom:none}
+.tr .tl{color:#8b949e}
+.tr .tv{font-weight:600}
+@media(max-width:680px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="hdr">
+    <h1>鸟类声音检测与定位</h1>
+    <div class="sub">ESP32-S3 | ES7210 | 4麦克风阵列 (r=25mm)</div>
+</div>
+<div class="conn">
+    <span class="dot" id="cDot"></span>
+    <span id="cTxt">连接中...</span>
+</div>
+<div class="grid">
+    <!-- Classification -->
+    <div class="card">
+        <div class="card-t">分类</div>
+        <div class="det-st noise" id="dSt">--</div>
+        <div class="cr">
+            <span class="lb">鸟类</span>
+            <div class="bg"><div class="bar b" id="bBar" style="width:0%"></div></div>
+            <span class="vl" id="bVal">0.0%</span>
+        </div>
+        <div class="cr">
+            <span class="lb">噪音</span>
+            <div class="bg"><div class="bar n" id="nBar" style="width:0%"></div></div>
+            <span class="vl" id="nVal">0.0%</span>
+        </div>
+    </div>
+    <!-- Direction -->
+    <div class="card" id="dirCard">
+        <div class="card-t">声音方向</div>
+        <div class="dir-w">
+            <div class="comp"><canvas id="cvs" width="240" height="240"></canvas></div>
+            <div class="ang"><span id="aVal">--</span><span class="u">&deg;</span></div>
+        </div>
+    </div>
+    <!-- Model -->
+    <div class="card">
+        <div class="card-t">模型</div>
+        <div class="igr">
+            <div class="iit"><div class="iv">16kHz</div><div class="il">模型采样率</div></div>
+            <div class="iit"><div class="iv">32000</div><div class="il">窗口大小</div></div>
+            <div class="iit"><div class="iv">INT8</div><div class="il">量化</div></div>
+            <div class="iit"><div class="iv">3</div><div class="il">类别数</div></div>
+        </div>
+    </div>
+    <!-- System -->
+    <div class="card">
+        <div class="card-t">系统</div>
+        <div class="tr"><span class="tl">阵列半径</span><span class="tv">25 mm</span></div>
+        <div class="tr"><span class="tl">麦克风间距</span><span class="tv">50 mm</span></div>
+        <div class="tr"><span class="tl">通道</span><span class="tv">4-ch TDM</span></div>
+        <div class="tr"><span class="tl">阈值</span><span class="tv">0.60</span></div>
+        <div class="tr"><span class="tl">检测次数</span><span class="tv" id="dCnt">0</span></div>
+    </div>
+</div>
+<script>
+/* 罗盘绘制 */
+function drawC(angle,det){
+    var c=document.getElementById('cvs'),ctx=c.getContext('2d');
+    var w=c.width,h=c.height,cx=w/2,cy=h/2,r=92;
+    var pointerOffset=45;   /* 与PCB丝印/外圈标签保持一致 */
+    var dialRotateCCW=0;   /* 圆盘逆时针旋转 90° */
+    var labelOffset=pointerOffset + dialRotateCCW;
+    ctx.clearRect(0,0,w,h);
+    /* 外圈 */
+    ctx.beginPath();ctx.arc(cx,cy,r,0,2*Math.PI);
+    ctx.strokeStyle='#30363d';ctx.lineWidth=2;ctx.stroke();
+    /* 方位标注 */
+    var lb=['90','180','270','0'];
+    var ar=[0,Math.PI/2,Math.PI,3*Math.PI/2];
+    ctx.fillStyle='#8b949e';ctx.font='11px sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    for(var i=0;i<4;i++){
+        var a=-Math.PI/2+ar[i]+labelOffset*Math.PI/180;
+        ctx.fillText(lb[i],cx+(r+20)*Math.cos(a),cy+(r+20)*Math.sin(a));
+        /* 刻度线 */
+        ctx.beginPath();
+        ctx.moveTo(cx+(r-4)*Math.cos(a),cy+(r-4)*Math.sin(a));
+        ctx.lineTo(cx+(r+4)*Math.cos(a),cy+(r+4)*Math.sin(a));
+        ctx.strokeStyle='#484f58';ctx.lineWidth=1.5;ctx.stroke();
+        /* 麦克风位置点 */
+        ctx.beginPath();
+        ctx.arc(cx+(r-18)*Math.cos(a),cy+(r-18)*Math.sin(a),3,0,2*Math.PI);
+        ctx.fillStyle='#484f58';ctx.fill();
+    }
+    if(angle===null)return;
+    var rad=(angle+pointerOffset-180)*Math.PI/180;
+    var cl=det?'#3fb950':'#6e7681';
+    /* 指向线 */
+    ctx.beginPath();ctx.moveTo(cx,cy);
+    var ax=cx+(r-22)*Math.cos(rad),ay=cy+(r-22)*Math.sin(rad);
+    ctx.lineTo(ax,ay);ctx.strokeStyle=cl;ctx.lineWidth=3;ctx.stroke();
+    /* 箭头端点 */
+    ctx.beginPath();ctx.arc(ax,ay,5,0,2*Math.PI);ctx.fillStyle=cl;ctx.fill();
+    /* 中心点 */
+    ctx.beginPath();ctx.arc(cx,cy,4,0,2*Math.PI);ctx.fillStyle='#f0f6fc';ctx.fill();
+}
+drawC(null,false);
+
+/* SSE 实时数据流 */
+var dCnt=0;
+function norm360(v){
+    v=v%360;
+    if(v<0)v+=360;
+    return v;
+}
+function displayAngle(v){
+    return norm360(v);
+}
+function connectSSE(){
+    var es=new EventSource('/events');
+    es.onopen=function(){
+        document.getElementById('cDot').className='dot on';
+        document.getElementById('cTxt').textContent='已连接';
+    };
+    es.onmessage=function(e){
+        try{
+            var d=JSON.parse(e.data);
+            if(d.status)return;
+            /* 双模式适配: 音色识别模式隐藏罗盘卡片 */
+            if(d.mode){
+                var dc=document.getElementById('dirCard');
+                if(dc) dc.style.display=(d.mode==='cls')?'none':'';
+            }
+            var bp=(d.bird*100).toFixed(1),np=(d.noise*100).toFixed(1);
+            document.getElementById('bBar').style.width=bp+'%';
+            document.getElementById('nBar').style.width=np+'%';
+            document.getElementById('bVal').textContent=bp+'%';
+            document.getElementById('nVal').textContent=np+'%';
+            var st=document.getElementById('dSt');
+            if(d.detected){
+                st.textContent='鸟类';st.className='det-st bird';dCnt++;
+            }else{
+                st.textContent='噪音';st.className='det-st noise';
+            }
+            document.getElementById('dCnt').textContent=dCnt;
+            var shownAngle=displayAngle(d.angle);
+            document.getElementById('aVal').textContent=shownAngle.toFixed(1);
+            drawC(d.angle,d.detected);
+        }catch(ex){}
+    };
+    es.onerror=function(){
+        document.getElementById('cDot').className='dot';
+        document.getElementById('cTxt').textContent='重新连接中...';
+    };
+}
+connectSSE();
+</script>
+</body>
+</html>

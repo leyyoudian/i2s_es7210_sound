@@ -1,0 +1,5 @@
+# Windows, Python 3.11/3.12 (playback scripts use winsound and audioop).
+# Host C tests additionally require MSVC Build Tools and Node.js.
+pytest>=8,<10
+numpy>=1.26,<3
+pyserial>=3.5,<4

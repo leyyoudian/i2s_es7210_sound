@@ -1,6 +1,6 @@
 /*
  * Wi-Fi Station + HTTP 服务器
- * - 连接到指定 AP (SSID/密码编译时写死)
+ * - 可选连接到本地wifi_credentials.h配置的AP，未配置直接离线运行
  * - 启动 HTTP 服务, 提供 dashboard HTML 页面
  * - SSE (Server-Sent Events) 实时推送检测数据到浏览器
  */
@@ -117,6 +117,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 
 static bool wifi_init_sta(void)
 {
+    if (WIFI_SSID[0] == '\0') {
+        ESP_LOGI(TAG, "Wi-Fi未配置，定位与灯效离线运行；配置见wifi_credentials.example.h");
+        return false;
+    }
     /* NVS 初始化 (Wi-Fi 驱动依赖) */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||

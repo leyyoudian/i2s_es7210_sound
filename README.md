@@ -2,7 +2,9 @@
 
 **ESP32-S3 + ES7210 四麦克风阵列 · 端侧智能声学开发板**
 
-一块同时具备 **实时声源定位** 与 **端侧声音识别** 的开发板。配套固件采用官方例程式组织，外设例程一应俱全，开箱即可玩，二次开发极友好。
+ESP32-S3 + ES7210 四麦开发板固件，支持 **实时声源定位** 和 **端侧声音识别** 两种编译模式。默认运行声源定位；不配置 Wi-Fi 也能离线使用灯环。
+
+**硬件也已开源**：原理图、PCB 等硬件设计见[嘉立创开源广场硬件项目](https://oshwhub.com/ley6666/project_labyaziz?jspm=hub.zy.zp.gc1___hub.hm.zp&jlc_vid=RlAPAQBWQFJdUgUFTlFbVlxSEQUPAwFUR1UMBAEHRwAxVlNfQ1hWUFBXRlJWUDsOAxUeFF5JWBYZEEoEHg8JSQcJGk4xDxASBxJUSEsJBAkZDxEEWQIBCg%3D%3D)。本仓库提供配套固件、测试和调试工具。
 
 > 🚀 **刚拿到板子？** 从 [docs/使用指南.md](docs/使用指南.md) 开始：开箱 → 上电 → 连 Wi-Fi → 手机看面板，5 分钟跑起来。
 
@@ -11,12 +13,15 @@
 ## ✨ 核心卖点
 
 ### 🎯 声源定位（DOA）
-- **4 颗 SPH1642HT5H MEMS 麦克风**，十字阵列，40mm 孔径
+- **4 颗 SPH1642HT5H MEMS 麦克风**，十字阵列，半径40mm、对径80mm
 - **48kHz 全速率同步采集**（I2S TDM 4 通道），时差分辨率达微秒级
 - **GCC-PHAT + SRP-PHAT 双算法**：互相关 + 可控响应功率全向搜索
 - **2° 全向搜索栅格**，0~360° 连续方位角输出
 - **智能跟踪器**：方向平滑 + 反射假峰抑制 + 瞬态事件快速路径（拍手即响应）
-- **16 颗 WS2812 灯环实时指向**声源方位，一眼可见
+- **16 颗 WS2812 灯环**：亮主灯连续跟随方向，移动时相邻尾灯最多10%亮度，静止柔和呼吸
+- **保守双方向显示**：两个空间峰持续确认后各亮一颗主灯，最多两个方向；反射、近邻或强弱悬殊的声源仍可能无法分辨
+
+灯光显示与原始角度输出分开处理：动画不改声学算法、串口和网页的角度输出。声强用于亮度提示，不能当作测距。参数、默认值及限制见[参数与动态灯效说明](docs/参数与动态灯效说明.md)。
 
 ### 🐦 端侧声音识别
 - **Edge Impulse 训练 + TFLite Micro INT8 量化模型**，推理在板端完成，**不依赖网络**
@@ -43,7 +48,7 @@
 | ---- | ---- |
 | 主控 | ESP32-S3（双核 240MHz, Wi-Fi + USB OTG） |
 | 音频前端 | ES7210 4 通道音频 ADC（I2C 配置，TDM 输出） |
-| 麦克风 | 4 × SPH1642HT5H MEMS，十字阵列 40mm 孔径 |
+| 麦克风 | 4 × SPH1642HT5H MEMS，十字阵列半径40mm、对径80mm |
 | 采样率 | 48kHz / 16bit / 4 通道同步 |
 | 方位估计 | GCC-PHAT 预滤波 + SRP-PHAT 2° 全向搜索 |
 | 方向输出 | 0~360° 连续角度 + 16 灯环方位指示 |
@@ -76,7 +81,7 @@ main/                 # 主程序入口是 main/main.c (含 app_main)
 ├── main.c            总合演示：识别 + 定位（默认固件入口）
 ├── doa/              声源定位：GCC-PHAT/SRP、跟踪器、事件检测、门控、方向映射
 ├── bird_ai/          声音识别：Edge Impulse 推理封装 + 决策平滑
-├── led/              WS2812 灯环驱动
+├── led/              WS2812 DMA驱动、连续跟随/呼吸/暗拖尾与集中参数
 ├── wifi/             Wi-Fi 连接 + HTTP 服务器 + Web 罗盘面板
 ├── board_test/       板级生产自检（逐项 PASS/FAIL + 录音上传）
 └── examples/         独立外设例程（i2c/adc/uart/rgb/es7210/usb/ble）
@@ -85,7 +90,7 @@ main/                 # 主程序入口是 main/main.c (含 app_main)
 ## 🚀 快速上手
 
 1. USB-C 线连接开发板与电脑
-2. 安装 [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)（v5.4 及以上）
+2. 安装 [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32s3/get-started/)（本工程验证版本为v5.4.2；其它版本请自行验证兼容性）
 3. 编译烧录：
 
 ```bash
@@ -93,7 +98,7 @@ idf.py set-target esp32s3
 idf.py -p PORT flash monitor
 ```
 
-4. 烧录后按串口日志提示连接 Wi-Fi，手机浏览器打开设备 IP 即可看到实时面板
+4. 默认无网络凭据时直接离线定位。需要网页面板时，复制 `main/wifi/wifi_credentials.example.h` 为 `main/wifi/wifi_credentials.h`，填写自己的2.4GHz Wi-Fi并重新烧录；后者已被Git忽略，请勿提交或分享包含私有密码的固件
 5. 想跑单个例程？编辑 `main/examples/examples.h` 切换后重新烧录
 
 ## 🔧 硬件引脚速查
@@ -115,7 +120,7 @@ idf.py -p PORT flash monitor
 
 - **换识别对象**：在 [Edge Impulse](https://studio.edgeimpulse.com/) 用自己的数据训练新模型，替换 `bird-sound-cpp-mcu-v2/tflite-model/` 即可（狗叫、猫叫、口哨、玻璃破碎……都是现成思路）
 - **调定位参数**：阵列几何在 `main/doa/gcc_phat.h`（`MIC_ARRAY_RADIUS_MM`），搜索栅格在 `gcc_phat.c`（`SRP_STEP_DEG`）
-- **换指示方式**：`main/led/led_indicator.c`，16 灯的物理角度表在 `main/doa/direction_mapping.c`
+- **调灯效**：`main/led/led_effects_config.h`，含中文单位说明；16灯的物理角度表在 `main/doa/direction_mapping.c`
 - **面板改版**：`main/wifi/web_page.html`，嵌入固件随设备下发
 
 ---
@@ -133,3 +138,19 @@ Wi-Fi 连接 → I2C×2 排针扫描 → ADC×2 读取 → RGB 灯环 → 蜂鸣
 - 自检固件二进制约 1.1MB，工程使用自定义分区表（`partitions.csv`，app 分区 2MB）
 - GCC 14 编译 Edge Impulse SDK 偶发内部编译器错误（ICE），重跑 `idf.py build` 即可
 - 本板不含 DAC，ES7210 仅做录音（无回放）
+
+## 测试、参数与诊断
+
+- [新人开发指南](docs/新人指南.md)：构建、测试命令与日志字段。
+- [参数与动态灯效说明](docs/参数与动态灯效说明.md)：连续绕圈、主灯/尾灯、模式和参数。
+- [实机调试记录](docs/声源定位调试_2026-11-18.md)：真实录音、低声压边界与验证范围。
+- [调试工具](tools/README.md)：PC播放测试、连续四通道采集与实际C代码重放。
+
+主机回归目前使用 Windows + Python 3.11/3.12、MSVC Build Tools（C/C++工具链）及 Node.js：
+
+```powershell
+python -m pip install -r tools/requirements.txt
+python -m pytest tests -q
+```
+
+`DOA_PCM_STREAM`/`DOA_PCM_DUMP` 只用于诊断，正式定位构建均应关闭。真实多声源、房间反射及很弱的声音仍有误差；测试中的“有输出”不代表角度准确率100%。本次整理不更改第三方代码/模型的许可，使用前请查看相应目录的LICENSE及模型来源。

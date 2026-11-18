@@ -2,6 +2,7 @@ idf_component_register(
     SRCS "main.c"
          "doa/gcc_phat.c"
          "doa/doa_display_gate.c"
+         "doa/doa_led_scene.c"
          "doa/doa_event.c"
          "doa/doa_tracker.c"
          "doa/direction_mapping.c"
@@ -9,6 +10,7 @@ idf_component_register(
          "bird_ai/ei_inference.cpp"
          "wifi/wifi_server.c"
          "led/led_indicator.c"
+         "led/led_effects.c"
          "board_test/board_test.c"
          "examples/example_i2c_scan.c"
          "examples/example_adc.c"
@@ -24,6 +26,7 @@ idf_component_register(
                  "led"
                  "board_test"
                  "examples"
+                 "led"
     PRIV_REQUIRES esp_driver_i2s esp_driver_gpio esp_driver_i2c
                   esp_driver_ledc esp_driver_rmt esp_driver_uart
                   esp_driver_usb_serial_jtag
@@ -49,3 +52,19 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     # sqrtf 改用硬件指令 (结果仍是 IEEE 正确舍入, 不改变数值语义)
     -fno-math-errno
 )
+
+# Use the already bundled ESP-DSP S3 FFT kernel for real-time DOA. Only this
+# source enables the DSP backend; the classifier keeps its existing backend.
+set(DOA_FFT_KERNEL "${CMAKE_CURRENT_LIST_DIR}/../bird-sound-cpp-mcu-v2/edge-impulse-sdk/porting/espressif/esp-dsp/modules/fft/float/dsps_fft2r_fc32_aes3_.S")
+target_sources(${COMPONENT_LIB} PRIVATE "${DOA_FFT_KERNEL}")
+set_source_files_properties("${DOA_FFT_KERNEL}" PROPERTIES
+    COMPILE_OPTIONS "-UEIDSP_USE_ESP_DSP;-DEIDSP_USE_ESP_DSP=1")
+
+if(DOA_PCM_DUMP)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE DOA_PCM_DUMP=1)
+endif()
+
+if(DOA_PCM_STREAM)
+    target_sources(${COMPONENT_LIB} PRIVATE "doa/doa_pcm_stream.c")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE DOA_PCM_STREAM=1)
+endif()

@@ -7,32 +7,32 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
-#define REQUIRED_STABLE_FRAMES 2U
-#define LARGE_JUMP_DEG 60.0f
-#define PENDING_SPREAD_DEG 20.0f
-#define HIGH_CONFIDENCE_JUMP 0.35f
-#define HIGH_CONFIDENCE_JUMP_FRAMES 2U
-#define TRANSIENT_GUARD_FRAMES 6U
+#define REQUIRED_STABLE_FRAMES             2U                     /* 接口默认首次获取2帧；main显式设置5帧，当前不改 */
+#define LARGE_JUMP_DEG                     60.0f                  /* 超过60度当候选大跳变，不直接平滑过去 */
+#define PENDING_SPREAD_DEG                 20.0f                  /* 待确认方向允许波动20度，过大重新计数 */
+#define HIGH_CONFIDENCE_JUMP               0.35f                  /* 非对侧大跳变的较高置信判据 */
+#define HIGH_CONFIDENCE_JUMP_FRAMES        2U                     /* 高置信非对侧大跳变需2帧确认 */
+#define TRANSIENT_GUARD_FRAMES             6U                     /* 接受瞬态后6帧保护，约128ms，抑制随后反射 */
 /* 瞬态(响指)路径的对侧镜像保护: 瞬态只有 1~2 帧快照, 无法用连续帧区分镜像,
  * 故对侧跳变需更高的绝对置信才接受, 否则保持原方向(避免响指亮对面). */
-#define TRANSIENT_OPPOSITE_JUMP_DEG 120.0f
-#define TRANSIENT_OPPOSITE_MIN_CONF 0.60f
+#define TRANSIENT_OPPOSITE_JUMP_DEG        120.0f                 /* 超过120度属于对侧瞬态跳变 */
+#define TRANSIENT_OPPOSITE_MIN_CONF        0.60f                  /* 对侧瞬态所需更高置信，不是概率 */
 /* 瞬态冷启动锁定: 跟踪器尚未初始化时, 镜像伪影没有任何历史方向可对照,
  * 必须要求较高置信才允许瞬态直接锁定初始方向, 否则回落到普通路径的
  * 连续帧确认. */
-#define TRANSIENT_INITIAL_LOCK_MIN_CONF 0.35f
-#define MAX_PENDING_MISSES 3U
+#define TRANSIENT_INITIAL_LOCK_MIN_CONF    0.16f                  /* 无历史方向时瞬态单帧获取最低置信 */
+#define MAX_PENDING_MISSES                 3U                     /* 普通候选最多容忍3帧无效；对侧候选遇拒绝即中断 */
 /* 对侧(镜像)跳变是 GCC-PHAT 对称伪影, 最容易假触发.
  * 区分镜像假峰 vs 真实声源切换靠"连续稳定帧数": 镜像偶发 1~2 帧即消失,
  * 真实切换持续多帧. 因此用中等置信 + 连续 5 帧稳定, 而非过高的绝对置信,
  * 否则真实 0°->180° 切换会被锁死成跑马灯. */
-#define OPPOSITE_JUMP_DEG 120.0f
-#define OPPOSITE_STABLE_FRAMES 5U
-#define OPPOSITE_MIN_CONFIDENCE 0.18f
-#define MEDIUM_JUMP_DEG 60.0f
-#define WIDE_JUMP_DEG 90.0f
-#define MEDIUM_CONFIDENCE 0.25f
-#define WIDE_CONFIDENCE 0.35f
+#define OPPOSITE_JUMP_DEG                  120.0f                 /* 普通跟踪对侧阈值120度 */
+#define OPPOSITE_STABLE_FRAMES             5U                     /* 对侧切换需5次稳定有效观测 */
+#define OPPOSITE_MIN_CONFIDENCE            0.18f                  /* 普通对侧切换最低置信，低于则不累积 */
+#define MEDIUM_JUMP_DEG                    60.0f                  /* 中等跳变角界60度 */
+#define WIDE_JUMP_DEG                      90.0f                  /* 大范围跳变角界90度 */
+#define MEDIUM_CONFIDENCE                  0.25f                  /* 中等跳变的快/慢确认分界 */
+#define WIDE_CONFIDENCE                    0.35f                  /* 90~120度跳变的快/慢确认分界 */
 
 static float circular_distance(float a, float b)
 {
@@ -139,6 +139,7 @@ void doa_tracker_init(doa_tracker_t *tracker, float min_confidence)
     if (!tracker) return;
     memset(tracker, 0, sizeof(*tracker));
     tracker->min_confidence = min_confidence;
+    tracker->acquisition_frames = REQUIRED_STABLE_FRAMES;
 }
 
 bool doa_tracker_update_transient(doa_tracker_t *tracker, float angle_deg,
@@ -175,6 +176,21 @@ bool doa_tracker_update_transient(doa_tracker_t *tracker, float angle_deg,
             *held_angle = tracker->held_angle;
             return false;
         }
+        if (movement > LARGE_JUMP_DEG) {
+            /* An onset may bypass smoothing, but must not bypass spatial
+             * continuity during an already active source. Single-frame room
+             * reflections often have deceptively high peak confidence. After
+             * silence the caller resets initialization, so a new isolated
+             * event can still acquire in one frame. */
+            unsigned required = movement > TRANSIENT_OPPOSITE_JUMP_DEG ? 5U : 2U;
+            if (!accumulate_pending(tracker, normalized,
+                                    movement > TRANSIENT_OPPOSITE_JUMP_DEG,
+                                    false, required)) {
+                *held_angle = tracker->held_angle;
+                return false;
+            }
+            normalized = vector_angle(tracker->pending_x, tracker->pending_y);
+        }
     }
     float radians = normalized * M_PI / 180.0f;
     tracker->x = cosf(radians);
@@ -204,7 +220,7 @@ bool doa_tracker_update(doa_tracker_t *tracker, float angle_deg, float confidenc
     if (!candidate_valid || !isfinite(angle_deg) || !isfinite(confidence) ||
         confidence < tracker->min_confidence) {
         if (tracker->pending_count > 0) {
-            if (tracker->pending_high_confidence_jump ||
+            if (tracker->pending_high_confidence_jump || tracker->pending_opposite_jump ||
                 ++tracker->pending_misses > MAX_PENDING_MISSES) {
                 tracker->pending_count = 0;
                 tracker->pending_misses = 0;
@@ -220,7 +236,7 @@ bool doa_tracker_update(doa_tracker_t *tracker, float angle_deg, float confidenc
     float x = cosf(radians), y = sinf(radians);
     if (!tracker->initialized) {
         if (!accumulate_pending(tracker, angle_deg, false, false,
-                                REQUIRED_STABLE_FRAMES)) {
+                                tracker->acquisition_frames)) {
             *held_angle = tracker->held_angle;
             return false;
         }
@@ -257,6 +273,8 @@ bool doa_tracker_update(doa_tracker_t *tracker, float angle_deg, float confidenc
             }
             /* required==0: 置信过低无法确认跳变(镜像假峰或弱信号), 锁原方向 */
             if (required == 0U) {
+                tracker->pending_count = 0;
+                tracker->pending_misses = 0;
                 *held_angle = tracker->held_angle;
                 return false;
             }

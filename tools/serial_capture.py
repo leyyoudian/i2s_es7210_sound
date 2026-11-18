@@ -13,6 +13,10 @@ def main():
     args = ap.parse_args()
 
     ser = serial.Serial(args.port, args.baud, timeout=0.5)
+    ser.reset_input_buffer()
+    drain_end = time.time() + 3
+    while time.time() < drain_end:
+        ser.read(ser.in_waiting or 1)
     t_end = time.time() + args.secs
     n = 0
     with open(args.out, "w", encoding="utf-8", errors="replace") as f:

@@ -17,6 +17,7 @@ typedef struct {
     float pending_y;
     float min_confidence;
     unsigned pending_count;
+    unsigned acquisition_frames;
     unsigned pending_misses;
     unsigned transient_guard_frames;
     bool pending_high_confidence_jump;

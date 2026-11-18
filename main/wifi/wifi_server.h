@@ -3,9 +3,17 @@
 
 #include <stdbool.h>
 
-/* Wi-Fi 凭据 (请修改为你的网络) */
-#define WIFI_SSID       "CMCC-U93N"
-#define WIFI_PASSWORD   "v9r47296"
+/* 可选私有配置：复制wifi_credentials.example.h为wifi_credentials.h填写。
+ * 私有文件被Git忽略；没有配置时直接离线运行定位/灯效，不尝试空SSID。 */
+#if __has_include("wifi_credentials.h")
+#include "wifi_credentials.h"
+#endif
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD ""
+#endif
 
 /*
  * 初始化 Wi-Fi Station 模式并启动 HTTP 服务器.

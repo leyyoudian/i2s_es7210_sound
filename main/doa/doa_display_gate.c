@@ -97,6 +97,9 @@ bool doa_display_gate_update(doa_display_gate_t *gate, bool tracker_updated,
         return false;
     }
 
+    /* Rejected frames cannot confirm a later, unrelated candidate. */
+    gate->candidate_pixel = -1;
+    gate->candidate_count = 0;
     bool weak_rejected = !localization_valid &&
         (!isfinite(doa_energy) || doa_energy < WEAK_REJECT_ENERGY);
     if (weak_rejected) {

@@ -66,7 +66,8 @@ int main(void)
     if (doa_tracker_update(&tracker, 178.0f, 0.36f, true, &held)) return 28;
     if (doa_tracker_update(&tracker, 180.0f, 0.36f, true, &held)) return 40;
     if (doa_tracker_update(&tracker, 179.0f, 0.36f, true, &held)) return 41;
-    if (!doa_tracker_update(&tracker, 180.0f, 0.36f, true, &held)) return 29;
+    if (doa_tracker_update(&tracker, 180.0f, 0.36f, true, &held)) return 29;
+    if (!doa_tracker_update(&tracker, 180.0f, 0.36f, true, &held)) return 47;
     if (fabsf(held - 179.4f) > 5.0f) {
         fprintf(stderr, "confirmed opposite jump missed: %.1f\n", held);
         return 30;
@@ -74,7 +75,7 @@ int main(void)
 
     doa_tracker_init(&tracker, 0.15f);
     /* 冷启动瞬态锁定需要 TRANSIENT_INITIAL_LOCK_MIN_CONF 以上置信 */
-    if (doa_tracker_update_transient(&tracker, 45.0f, 0.30f, true, &held)) {
+    if (doa_tracker_update_transient(&tracker, 45.0f, 0.15f, true, &held)) {
         return 42;
     }
     if (!doa_tracker_update_transient(&tracker, 45.0f, 0.40f, true, &held)) {
@@ -84,8 +85,10 @@ int main(void)
     doa_tracker_init(&tracker, 0.15f);
     if (doa_tracker_update(&tracker, 0.0f, 0.8f, true, &held)) return 31;
     if (!doa_tracker_update(&tracker, 1.0f, 0.8f, true, &held)) return 32;
-    if (!doa_tracker_update_transient(
+    if (doa_tracker_update_transient(
             &tracker, 270.0f, 0.36f, true, &held)) return 33;
+    if (!doa_tracker_update_transient(
+            &tracker, 270.0f, 0.36f, true, &held)) return 48;
     if (fabsf(held - 270.0f) > 0.1f) {
         fprintf(stderr, "transient did not update immediately: %.1f\n", held);
         return 34;
@@ -108,5 +111,15 @@ int main(void)
         fprintf(stderr, "ordinary tracking did not resume after guard: %.1f\n", held);
         return 39;
     }
+    /* Weak spatial evidence must accumulate five consistent accepted frames
+     * before selecting the first direction; strong transients keep their
+     * separately qualified immediate acquisition path. */
+    doa_tracker_init(&tracker,.025f);
+    tracker.acquisition_frames=5U;
+    for(int i=0;i<4;++i) {
+        if(doa_tracker_update(&tracker,300.f,.3f,true,&held)) return 49;
+    }
+    if(!doa_tracker_update(&tracker,300.f,.3f,true,&held)) return 50;
+    if(fabsf(held-300.f)>.1f) return 51;
     return 0;
 }
